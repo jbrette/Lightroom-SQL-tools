@@ -1,0 +1,38 @@
+[project]
+name = "lrtools"
+dynamic = ["version"]
+description = "Retrieve photo data from Adobe Lightroom catalog"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "fedor denivac", email = "fdenivac@gmail.com" }]
+keywords = ["lightroom", "sql", "photo"]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Environment :: Console",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Multimedia :: Graphics",
+]
+requires-python = ">=3.14"
+dependencies = [
+    "geopy>=2.3.0",
+    "python-dateutil>=2.8.2",
+    "pytz>=2023.3",
+    "requests>=2.32.4",
+    "tzlocal>=5.0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/fdenivac/Lightroom-SQL-tools"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "lrtools/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lrtools"]

@@ -1,0 +1,18 @@
+# Python / uv
+__pycache__/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Lightroom catalogs and their companion data (local test data)
+*.lrcat
+*.lrcat-data/
+*.lrcat-wal
+*.lrcat-shm
+*.lrcat.lock
+*.lrdata/
+Lightroom Famille BL-v13-4/
+
+# macOS
+.DS_Store

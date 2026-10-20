@@ -10,20 +10,17 @@ Python library and scripts to retrieve and displays photo data from an Adobe Lig
 ## Tested environment
 * OS: Windows 10 (64 bit)
 * Lightroom: 6.x, Classic CC
-* Python" >= 3.7
+* Python >= 3.14
 * Terminals: Windows console or cygwin
 
 
 ## Installation
-* run "``pip install git+https://github.com/fdenivac/Lightroom-SQL-tools``"
-  
-<br>OR<br>
+Requires [uv](https://docs.astral.sh/uv/).
 
-* download *[zip file project ](https://github.com/fdenivac/Lightroom-SQL-tools/archive/master.zip)*
-* extract the zip file
-* execute in the main directory: ``python setup.py install``
+* clone the project, then in the main directory run ``uv sync``
+* run the scripts with ``uv run lrselect.py ...`` and ``uv run lrsmart.py ...``
 
-Scripts (``lrselect.py`` and ``lrsmart.py``) are installed in *Scripts* directory of Python.
+To use only the library in another project: ``uv add git+https://github.com/fdenivac/Lightroom-SQL-tools``
 
 ## Configuration
 Modify the config file *lrtools.ini*:
