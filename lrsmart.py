@@ -8,6 +8,7 @@ Execute Lightroom smart collections from catalog or file
 """
 
 import sys
+import os
 import logging
 import argparse
 from sqlite3 import OperationalError
@@ -314,9 +315,13 @@ def run():
     # protect main from IOError occuring with a pipe command
     try:
         main()
+        # flush here so a closed pipe is handled below, not at interpreter exit
+        sys.stdout.flush()
     except IOError as _e:
         if _e.errno not in [22, 32]:
             raise _e
+        # reader closed the pipe: discard pending output so the exit flush cannot fail
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
     except (LRConfigException, LRSelectException, LRCatException) as _e:
         print(" ==> FAILED:", _e, file=sys.stderr)
 
