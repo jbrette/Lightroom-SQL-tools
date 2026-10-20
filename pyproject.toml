@@ -24,6 +24,10 @@ dependencies = [
     "tzlocal>=5.0.1",
 ]
 
+[project.scripts]
+lrselect = "lrselect:run"
+lrsmart = "lrsmart:run"
+
 [project.urls]
 Homepage = "https://github.com/fdenivac/Lightroom-SQL-tools"
 
@@ -35,4 +39,4 @@ build-backend = "hatchling.build"
 path = "lrtools/_version.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["lrtools"]
+only-include = ["lrtools", "lrselect.py", "lrsmart.py"]

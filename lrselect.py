@@ -288,7 +288,8 @@ def main():
             )
 
 
-if __name__ == "__main__":
+def run():
+    """Console script entry point"""
     # protect main from IOError occuring with a pipe command
     try:
         main()
@@ -301,3 +302,7 @@ if __name__ == "__main__":
         print(" ==> FAILED SQL :", _e, file=sys.stderr)
 
     log.info("lrselect end")
+
+
+if __name__ == "__main__":
+    run()

@@ -17,13 +17,17 @@ Python library and scripts to retrieve and displays photo data from an Adobe Lig
 ## Installation
 Requires [uv](https://docs.astral.sh/uv/).
 
-* clone the project, then in the main directory run ``uv sync``
-* run the scripts with ``uv run lrselect.py ...`` and ``uv run lrsmart.py ...``
+* install the ``lrselect`` and ``lrsmart`` commands: ``uv tool install git+https://github.com/jbrette/Lightroom-SQL-tools``
 
-To use only the library in another project: ``uv add git+https://github.com/fdenivac/Lightroom-SQL-tools``
+<br>OR, from a clone of the project:<br>
+
+* run ``uv sync`` in the main directory
+* run ``uv run lrselect ...`` and ``uv run lrsmart ...`` (or ``uv run lrselect.py ...``)
+
+To use the library in another project: ``uv add git+https://github.com/jbrette/Lightroom-SQL-tools``
 
 ## Configuration
-Modify the config file *lrtools.ini*:
+Modify the config file *lrtools.ini*. It is searched in the current directory, then in the script directory, then in *~/.config/lrtools/*. Without a config file, defaults are used.
 * LRCatalog : the default Lightroom catalog to use
 * DayFirst :  parsing date format ("DD-MM-YY" if True, else  "YY-MM-DD")
 

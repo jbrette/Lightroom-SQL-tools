@@ -26,7 +26,7 @@ uv run lrsmart.py -b <catalog> "<smart collection name>" --sql --count
 uv run lrsmart.py -b <catalog> --file exported.lrsmcol --results
 ```
 
-`-b` accepts either a `.lrcat` file or an INI file in `lrtools.ini` format. Without `-b`, `LRCatalog` from `lrtools.ini` is used (searched next to the script). `lrtools.ini` also sets `DayFirst` (date parsing order) and `GeoCoder` (`Nominatim` or `BanFrance`, used by the `gps=<town>+<km>` criterion, which requires network access).
+`-b` accepts either a `.lrcat` file or an INI file in `lrtools.ini` format. Without `-b`, `LRCatalog` from `lrtools.ini` is used (searched in the current directory, the script directory, then `~/.config/lrtools/`; defaults are used silently if none exists). `lrtools.ini` also sets `DayFirst` (date parsing order) and `GeoCoder` (`Nominatim` or `BanFrance`, used by the `gps=<town>+<km>` criterion, which requires network access).
 
 `Lightroom Famille BL-v13-4/` is a local catalog for manual testing; it and all `*.lrcat*` files are git-ignored.
 
@@ -49,5 +49,5 @@ uv run lrsmart.py -b <catalog> --file exported.lrsmcol --results
 - `lrselect.py -h` builds its help text by slicing the `select_generic` docstrings of `LRSelectPhoto` and `LRSelectCollection` between `columns :` and `kwargs :`. Keep those markers intact when editing the docstrings; they are the user-facing reference for columns and criteria.
 - Errors surface as `LRCatException`, `LRSelectException`, `SmartException`, `LRConfigException`; scripts catch these and exit with a message.
 - Version string lives in `lrtools/_version.py` (date-based, `YYYY.MM.DD`), read by hatchling via `[tool.hatch.version]`.
-- The scripts are not packaged as console entry points: `LRToolConfig` looks for `lrtools.ini` next to `sys.argv[0]`, so run them from the repo with `uv run`.
+- `lrselect.py` and `lrsmart.py` are shipped as top-level modules in the wheel (`only-include` in `pyproject.toml`) and exposed as the `lrselect` / `lrsmart` console scripts via their `run()` functions, which wrap `main()` with the error handling. Keep both runnable directly as `.py` files too.
 - This is a fork of `fdenivac/Lightroom-SQL-tools`; `origin` is `jbrette/Lightroom-SQL-tools`.
