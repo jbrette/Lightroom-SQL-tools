@@ -698,26 +698,22 @@ class LRSelectPhoto(LRSelectGeneric):
                     "%s",
                     self.func_gps,
                 ],
+                #
+                # criteria on tables with several rows per photo (imports, collections, keywords)
+                # are subqueries, not joins: joins would return one row per matching combination
+                #
                 "import": [
-                    [
-                        "LEFT JOIN AgLibraryImportImage impim ON  i.id_local = impim.image",
-                        " LEFT JOIN AgLibraryImport imp ON impim.import = imp.id_local",
-                    ],
-                    "imp.id_local = %s",
+                    "",
+                    "i.id_local IN (SELECT impim.image FROM AgLibraryImportImage impim WHERE impim.import = %s)",
                 ],
                 "idcollection": [
-                    [
-                        "LEFT JOIN AgLibraryCollectionimage ci ON ci.image = i.id_local",
-                        " LEFT JOIN AgLibraryCollection col ON col.id_local = ci.Collection",
-                    ],
-                    "col.id_local = %s",
+                    "",
+                    "i.id_local IN (SELECT ci.image FROM AgLibraryCollectionImage ci WHERE ci.collection = %s)",
                 ],
                 "collection": [
-                    [
-                        "LEFT JOIN AgLibraryCollectionimage ci<NUM> ON ci<NUM>.image = i.id_local",
-                        "LEFT JOIN AgLibraryCollection col<NUM> ON col<NUM>.id_local = ci<NUM>.Collection",
-                    ],
-                    'col<NUM>.name LIKE "%s"',
+                    "",
+                    "i.id_local IN (SELECT ci.image FROM AgLibraryCollectionImage ci"
+                    ' JOIN AgLibraryCollection col ON col.id_local = ci.collection WHERE col.name LIKE "%s")',
                 ],
                 "idpubcollection": [
                     [
@@ -756,18 +752,13 @@ class LRSelectPhoto(LRSelectGeneric):
                     self.func_stacks,
                 ],
                 "idkeyword": [
-                    [
-                        "LEFT JOIN AgLibraryKeywordImage kwi ON i.id_local = kwi.image",
-                        " LEFT JOIN AgLibraryKeyword kw ON kw.id_local = kwi.tag",
-                    ],
-                    "kw.id_local = %s",
+                    "",
+                    "i.id_local IN (SELECT kwi.image FROM AgLibraryKeywordImage kwi WHERE kwi.tag = %s)",
                 ],
                 "keyword": [
-                    [
-                        "LEFT JOIN AgLibraryKeywordImage kwi<NUM> ON i.id_local = kwi<NUM>.image",
-                        " LEFT JOIN AgLibraryKeyword kw<NUM> ON kw<NUM>.id_local = kwi<NUM>.tag",
-                    ],
-                    'kw<NUM>.name LIKE "%s"',
+                    "",
+                    "i.id_local IN (SELECT kwi.image FROM AgLibraryKeywordImage kwi"
+                    ' JOIN AgLibraryKeyword kw ON kw.id_local = kwi.tag WHERE kw.name LIKE "%s")',
                 ],
                 "haskeywords": [
                     "",

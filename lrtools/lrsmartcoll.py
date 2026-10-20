@@ -272,10 +272,13 @@ class SQLSmartColl:
 
     def criteria_keywords(self):
         """criteria keyword"""
-        _base_sql = self.lrdb.lrphoto.select_generic(
-            self.base_select, "keyword", distinct=True, sql=True
+        _base_sql = (
+            self.lrdb.lrphoto.select_generic(
+                self.base_select, "", distinct=True, sql=True
+            ).rstrip()
+            + " LEFT JOIN AgLibraryKeywordImage kwi1 ON i.id_local = kwi1.image"
+            + " LEFT JOIN AgLibraryKeyword kw1 ON kw1.id_local = kwi1.tag"
         )
-        _base_sql = _base_sql[: _base_sql.rfind(" WHERE ")]
         if self.func["operation"] == "noneOf":
             lrk = LRKeywords(self.lrdb)
             indexes = list()

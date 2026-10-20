@@ -197,6 +197,7 @@ def test_selected_column_names(lrdb):
         ("collection=Holidays", [1, 2]),
         ("collection=Holidays, collection=Best", [2]),
         ("idcollection=11", [2]),
+        ("idcollection=10, idcollection=11", [2]),
         ("import=1", [1, 2]),
         ("pubcollection=Flickr", [1]),
         ("idpubcollection=20", [1]),
@@ -254,9 +255,23 @@ def test_distinct(lrdb):
     assert len(rows) == 2
 
 
-def test_repeated_criterion_uses_numbered_aliases(lrdb):
-    sql = lrdb.lrphoto.select_generic("id", "keyword=a, keyword=b", sql=True)
-    assert "kw1.name" in sql and "kw2.name" in sql
+@pytest.mark.parametrize(
+    "criteria",
+    [
+        "keyword=%",
+        "keyword=beach|keyword=family",
+        "keyword=%a%|keyword=family|rating=5",
+        "idkeyword=3|idkeyword=4",
+        "collection=%",
+        "collection=Holidays|collection=Best",
+        "idcollection=10|idcollection=11",
+        "import=1|keyword=family",
+    ],
+)
+def test_one_row_per_photo(lrdb, criteria):
+    """criteria on keywords/collections/imports must not repeat a photo once per match"""
+    ids = [row[0] for row in lrdb.lrphoto.select_generic("id", criteria).fetchall()]
+    assert ids and len(ids) == len(set(ids))
 
 
 def test_sql_kwargs(lrdb, capsys):
