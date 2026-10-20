@@ -8,10 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-There is no test suite, linter config, or build step. Verify changes by running the scripts against a real catalog.
-
 ```sh
 uv sync                              # creates .venv (Python >=3.14, see .python-version) from uv.lock
+uv run pytest                        # full test suite (~2s)
+uv run pytest tests/test_select_photo.py -k "keyword"   # subset
 uv add <pkg>                         # add a dependency (updates pyproject.toml and uv.lock)
 uv build                             # sdist + wheel (hatchling; version read from lrtools/_version.py)
 
@@ -27,6 +27,12 @@ uv run lrsmart.py -b <catalog> --file exported.lrsmcol --results
 ```
 
 `-b` accepts either a `.lrcat` file or an INI file in `lrtools.ini` format. Without `-b`, `LRCatalog` from `lrtools.ini` is used (searched in the current directory, the script directory, then `~/.config/lrtools/`; defaults are used silently if none exists). `lrtools.ini` also sets `DayFirst` (date parsing order) and `GeoCoder` (`Nominatim` or `BanFrance`, used by the `gps=<town>+<km>` criterion, which requires network access).
+
+## Tests
+
+`tests/conftest.py` builds a synthetic catalog from `tests/data/schema.sql` (the real Lightroom Classic 13 schema of the 33 tables the code touches, data-free) and inserts six known photos documented at the top of the file. Most tests assert which photo ids a columns/criteria string selects, so a new column or criterion gets a row in the parametrized lists of `test_select_photo.py` (or `test_smart.py` for a smart-collection criterion), plus fixture data if needed. If the code starts using a new Lightroom table, add its `CREATE TABLE` from a real catalog to `schema.sql`. `test_cli.py` runs both the repo scripts and the installed `lrselect`/`lrsmart` commands as subprocesses.
+
+`tests/test_known_bugs.py` holds existing bugs as `xfail(strict=True)`: fixing one makes the suite fail until its marker is removed.
 
 `Lightroom Famille BL-v13-4/` is a local catalog for manual testing; it and all `*.lrcat*` files are git-ignored.
 

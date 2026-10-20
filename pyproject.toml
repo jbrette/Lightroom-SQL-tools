@@ -40,3 +40,11 @@ path = "lrtools/_version.py"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["lrtools", "lrselect.py", "lrsmart.py"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
