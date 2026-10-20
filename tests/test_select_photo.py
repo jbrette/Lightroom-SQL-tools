@@ -8,8 +8,8 @@ from lrtools.lrselectphoto import criteria_to_dict, dict_to_criteria
 
 ALL_PHOTOS = [1, 2, 3, 4, 5, 6]
 
-# columns needing another column or a special value
-SPECIAL_COLUMNS = {"exif", "extfile"}
+# columns needing a special value
+SPECIAL_COLUMNS = {"exif"}
 
 
 def photo_columns(lrdb):
@@ -62,6 +62,7 @@ def test_every_column_executes(lrdb):
         ("pubname", "remote-1"),
         ("digest", "digest-1"),
         ("xmp", "<x:xmpmeta/>"),
+        ("extfile", "xmp"),
     ],
 )
 def test_column_value(lrdb, column, expected):
@@ -187,6 +188,8 @@ def test_selected_column_names(lrdb):
         ("keyword=family", [1, 2]),
         ("keyword=family, keyword=beach", [1]),
         ("keyword=beach|rating=3", [1, 2]),
+        ("keyword=beach | rating=3", [1, 2]),
+        ("(keyword=beach ), rating=5", [1]),
         ("idkeyword=4", [1, 2]),
         ("haskeywords=1", [1, 2]),
         ("haskeywords=0", [3, 4, 5, 6]),
@@ -304,6 +307,8 @@ def test_predefined_count_by_date(lrdb):
     assert rows == [("2018", 3), ("2019", 3)]
     rows = lrdb.lrphoto.select_generic("count_by_date(2018-1, 2019-1)", "").fetchall()
     assert rows == [("2018-05", 2), ("2018-07", 1)]
+    rows = lrdb.lrphoto.select_generic("count_by_date(2019-1-5, 2019-1-6)", "").fetchall()
+    assert rows == [("2019-01-05", 2)]
 
 
 def test_criteria_dict_round_trip():

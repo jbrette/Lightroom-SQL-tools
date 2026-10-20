@@ -19,8 +19,6 @@ from pathlib import Path
 
 import pytest
 
-# lrcat must be imported before lrselectphoto (circular import, see test_known_bugs.py)
-import lrtools.lrcat  # noqa: F401  pylint: disable=unused-import
 from lrtools.lrcat import LRCatDB
 from lrtools.lrtoolconfig import LRToolConfig
 

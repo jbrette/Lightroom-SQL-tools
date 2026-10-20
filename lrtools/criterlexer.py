@@ -58,7 +58,8 @@ class CriterLexer:
             else:
                 _m = re.match(r" *([^,\|\)\(]+)", self.criters)
                 if _m:
-                    value = _m.group(1)
+                    # spaces before next operator are not part of value (use quotes to keep them)
+                    value = _m.group(1).rstrip()
                 else:
                     self.last_error = f'No value for criterion "{key}"'
                     return False
@@ -83,7 +84,7 @@ class CriterLexer:
 
         while len(self.criters) > 0:
 
-            self.criters = self.criters.rstrip()
+            self.criters = self.criters.strip()
             if len(self.criters) == 0:
                 break
 

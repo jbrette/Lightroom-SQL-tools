@@ -32,13 +32,11 @@ uv run lrsmart.py -b <catalog> --file exported.lrsmcol --results
 
 `tests/conftest.py` builds a synthetic catalog from `tests/data/schema.sql` (the real Lightroom Classic 13 schema of the 33 tables the code touches, data-free) and inserts six known photos documented at the top of the file. Most tests assert which photo ids a columns/criteria string selects, so a new column or criterion gets a row in the parametrized lists of `test_select_photo.py` (or `test_smart.py` for a smart-collection criterion), plus fixture data if needed. If the code starts using a new Lightroom table, add its `CREATE TABLE` from a real catalog to `schema.sql`. `test_cli.py` runs both the repo scripts and the installed `lrselect`/`lrsmart` commands as subprocesses.
 
-`tests/test_known_bugs.py` holds existing bugs as `xfail(strict=True)`: fixing one makes the suite fail until its marker is removed.
-
 `Lightroom Famille BL-v13-4/` is a local catalog for manual testing; it and all `*.lrcat*` files are git-ignored.
 
 ## Architecture
 
-- `lrtools/lrcat.py` — `LRCatDB` opens the catalog and exposes `cursor`, plus hand-written queries (duplicates, imports, collections hierarchy, XMP/EXIF extraction, count-by-date). It instantiates `self.lrphoto = LRSelectPhoto(...)`. Also holds Lightroom timestamp conversion (`date_to_lrstamp`, `lr_strptime`); Lightroom stores dates as seconds since 2001-01-01.
+- `lrtools/lrcat.py` — `LRCatDB` opens the catalog and exposes `cursor`, plus hand-written queries (duplicates, imports, collections hierarchy, XMP/EXIF extraction, count-by-date). It instantiates `self.lrphoto = LRSelectPhoto(...)`. Re-exports the date helpers of `lrtools/lrdates.py` (`date_to_lrstamp`, `lr_strptime`); Lightroom stores modification dates as seconds since 2001-01-01 UTC. `lrselectgeneric` imports `lrdates`, never `lrcat`: `lrcat` imports `lrselectphoto`, so the reverse would be circular.
 - `lrtools/lrselectgeneric.py` — `LRSelectGeneric` is the table-driven SQL builder. Subclasses pass a main table plus two dicts:
   - **columns**: `name -> {value -> [SQL select expr, [JOIN clauses] | None]}`. The value is the part after `=` in the columns string (`name=full`); a bare column name means value `"True"`.
   - **criteria**: `name -> [JOIN clause(s), WHERE template with %s, optional value-conversion func]`. Conversion funcs (`func_oper_value`, `func_oper_parsedate`, `func_like_value_or_null`, …) turn user input like `>=2016-5-15` into SQL fragments.

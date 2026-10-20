@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 from dateutil import parser
 
-from .lrcat import date_to_lrstamp
+from .lrdates import date_to_lrstamp
 from .criterlexer import CriterLexer
 
 

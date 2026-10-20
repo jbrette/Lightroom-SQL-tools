@@ -423,7 +423,14 @@ class LRSelectPhoto(LRSelectGeneric):
                         ],
                     ],
                 },
-                "extfile": {"True": ["fi.sidecarExtensions AS extfile", None]},
+                "extfile": {
+                    "True": [
+                        "fi.sidecarExtensions AS extfile",
+                        [
+                            "LEFT JOIN AgLibraryFile fi ON i.rootFile = fi.id_local"
+                        ],
+                    ]
+                },
                 "location": {
                     "True": [
                         "iptcloc.value AS location",
@@ -1080,7 +1087,7 @@ class LRSelectPhoto(LRSelectGeneric):
                 return "by_month", datetime(int(parts[0]), int(parts[1]), 1)
             if len(parts) == 3:
                 return "by_day", datetime(
-                    int(parts[0]), int(parts[1]), int(parts[3])
+                    int(parts[0]), int(parts[1]), int(parts[2])
                 )
             raise LRSelectException("Incorrect date")
 

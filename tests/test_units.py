@@ -1,5 +1,7 @@
 """Pure functions: lexer, display formatting, dates, Lua decoding, GPS, config"""
 
+import subprocess
+import sys
 from datetime import datetime, timezone
 
 import pytest
@@ -31,7 +33,7 @@ from lrtools.slpp import SLPP
 
 
 def test_lexer_tokens():
-    lex = CriterLexer('(rating=>3| name="a,b"), videos')
+    lex = CriterLexer('(rating=>3 | name="a,b" ), videos')
     assert lex.parse()
     assert lex.tokens == [
         ("LPAR", None),
@@ -42,6 +44,12 @@ def test_lexer_tokens():
         ("AND", None),
         ("KEYVAL", ("videos", "True")),
     ]
+
+
+def test_lexer_strips_unquoted_value_only():
+    lex = CriterLexer('name=abc  , caption=" abc "')
+    assert lex.parse()
+    assert lex.tokens == [("KEYVAL", ("name", "abc")), ("AND", None), ("KEYVAL", ("caption", " abc "))]
 
 
 def test_lexer_lowercases_keys():
@@ -308,3 +316,20 @@ def test_config_load_raises(tmp_path):
     ini.write_text("[Other]\n")
     with pytest.raises(LRConfigException):
         LRToolConfig(None).load(str(ini))
+
+
+#
+# package
+#
+
+
+@pytest.mark.parametrize(
+    "module",
+    ["lrcat", "lrselectgeneric", "lrselectphoto", "lrselectcollection", "lrsmartcoll", "gps", "lrkeyword", "display"],
+)
+def test_module_imports_first(module):
+    """each module can be imported first, in a fresh interpreter (no circular import)"""
+    result = subprocess.run(
+        [sys.executable, "-c", f"import lrtools.{module}"], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
