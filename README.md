@@ -196,7 +196,7 @@ It builds an SQL SELECT query from two strings describing informations to displa
                 - 'pubposition': order number (float) in collection
                 - 'location'   : location name
                 - 'city'       : location city name
-                - 'country'    : location country name 
+                - 'country'    : location country name
                 - 'state'      : location state name
                 - 'duration'   : video duration in seconds
                 - 'count(NAME)' : count not NULL value for column NAME (ex: "count(master)")
@@ -408,7 +408,7 @@ Unfortunately :
 
         Execute smart collections from Lightroom catalog or from a exported file.
         Supported criteria are :
-            all, aperture, aspectRatio, camera, captureTime,  collection, colorMode, copyname, 
+            all, aperture, aspectRatio, camera, captureTime,  collection, colorMode, copyname,
             creator, exif, fileFormat, filename, flashFired, focalLength, folder, hasAdjustments,
             hasGPSData, heightCropped, iptc, isoSpeedRating, keywords, labelColor, labelText,
             lens, metadata, metadataStatus, rating, shutterSpeed, touchTime, treatment, widthCropped
@@ -423,7 +423,7 @@ Unfortunately :
                               Lightroom catalog file for database request
                                 (default:"C:\Users\Default\Documents\My Lightroom Catalog.lrcat")
         -f, --file            positionnal parameters are files, not smart collection names
-        -l, --list            list smart collections of name "smart_name" from Lightroom catalog. 
+        -l, --list            list smart collections of name "smart_name" from Lightroom catalog.
                                 "smart_name" can include jokers "%".
                                 Leave empty for all collections
         --raw                 display description of smart collection as stored
@@ -446,4 +446,3 @@ Unfortunately :
                               separator string between columns (default:" | ")
         --raw-print           print raw value (for speed, aperture columns)
         --log LOG             log to file
-

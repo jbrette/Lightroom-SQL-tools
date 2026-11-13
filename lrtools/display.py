@@ -1,34 +1,37 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+"""SQL results display functions."""
 
-"""
-
-SQL results display functions
-
-"""
-
-import sys
-import os
 import re
-from datetime import datetime, timedelta
-import pytz
+import sys
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, TypedDict, Unpack
+
 import tzlocal
 
+type DisplayFunc = Callable[[Any], str | int]
+type ColumnSpec = tuple[str, str, DisplayFunc | None]
 
-def smart_unit(value, unit):
-    """convert number in smart form : KB, MB, GB, TB"""
+_KILO = 1000
+_MEGA = _KILO * _KILO
+_GIGA = _MEGA * _KILO
+_TERA = _GIGA * _KILO
+
+
+def smart_unit(value: float | str | None, unit: str) -> str:
+    """Convert number in smart form : KB, MB, GB, TB."""
     if value is None:
         return f"- K{unit}"
     if isinstance(value, str):
         value = int(value)
-    if value > 1000 * 1000 * 1000 * 1000:
-        return f"{(value / (1000 * 1000 * 1000 * 1000.0)):.2f} T{unit}"
-    if value > 1000 * 1000 * 1000:
-        return f"{(value / (1000 * 1000 * 1000.0)):.2f} G{unit}"
-    if value > 1000 * 1000:
-        return f"{(value / (1000 * 1000.0)):.2f} M{unit}"
-    if value > 1000:
-        return f"{(value / 1000.0):.2f} K{unit}"
+    if value > _TERA:
+        return f"{(value / float(_TERA)):.2f} T{unit}"
+    if value > _GIGA:
+        return f"{(value / float(_GIGA)):.2f} G{unit}"
+    if value > _MEGA:
+        return f"{(value / float(_MEGA)):.2f} M{unit}"
+    if value > _KILO:
+        return f"{(value / float(_KILO)):.2f} K{unit}"
     return f"{value:.2f} {unit}"
 
 
@@ -37,33 +40,33 @@ def smart_unit(value, unit):
 #
 
 
-def display_keywords(value):
-    """remove None from keywords"""
+def display_keywords(value: str | None) -> str:
+    """Remove None from keywords."""
     if value is None:
         value = ""
     return value
 
 
-def display_aperture(value):
-    """format aperture in F value"""
-    return f"F{2**(float(value)/2):.1f}"
+def display_aperture(value: float | str) -> str:
+    """Format aperture in F value."""
+    return f"F{2 ** (float(value) / 2):.1f}"
 
 
-def display_iso(value):
-    """format iso value"""
+def display_iso(value: float) -> str:
+    """Format iso value."""
     return f"{value:.0f}"
 
 
-def display_speed(value):
-    """format shutter speed value"""
-    value = 2 ** (float(value))
-    if value > 1:
-        return f"1/{value:.0f}"
-    return f"{1/value:.0f}"
+def display_speed(value: float | str) -> str:
+    """Format shutter speed value."""
+    speed = 2 ** (float(value))
+    if speed > 1:
+        return f"1/{speed:.0f}"
+    return f"{1 / speed:.0f}"
 
 
-def display_boolean(value):
-    """format boolean value"""
+def display_boolean(value: float | None) -> str:
+    """Format boolean value."""
     if value == 0:
         return "no"
     if value == 1:
@@ -71,43 +74,41 @@ def display_boolean(value):
     return "?"
 
 
-def display_date(value):
-    """format date : remove sub-seconds"""
+def display_date(value: str) -> str:
+    """Format date : remove sub-seconds."""
     return value[:19]
 
 
-def display_lrtimestamp(value):
-    """format LR timestamp (2001 based)"""
-    utc = pytz.utc.localize(
-        datetime(2001, 1, 1, 0, 0, 0) + timedelta(seconds=float(value))
-    )
+def display_lrtimestamp(value: float | str) -> str:
+    """Format LR timestamp (2001 based)."""
+    utc = datetime(2001, 1, 1, tzinfo=UTC) + timedelta(seconds=float(value))
     return utc.astimezone(tzlocal.get_localzone()).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def display_duration(value):
-    """format video duration"""
+def display_duration(value: str) -> str:
+    """Format video duration."""
     num, den = value.split("/")
     return seconds_tostring(int(num, 16) / int(den, 16), fract=1)
 
 
-def display_flag(value):
-    """format flag (pick) value"""
+def display_flag(value: float | str) -> str:
+    """Format flag (pick) value."""
     dflags = {0: "unflagged", 1: "flagged", -1: "rejected"}
     return dflags[int(value)]
 
 
-def display_int(value):
-    """format integer value"""
+def display_int(value: float | str) -> int:
+    """Format integer value."""
     return int(value)
 
 
-def seconds_tostring(seconds, **kwargs):
+def seconds_tostring(seconds: float | str, *, fract: int = 0) -> str:
     """
-    convert seconds to string
+    Convert seconds to string.
+
     format returned :
         [H:]MM:SS[.pp]
-    kwargs :
-        fract : control decimals number
+    fract : control decimals number
     """
     stime = []
     seconds = float(seconds)
@@ -115,19 +116,16 @@ def seconds_tostring(seconds, **kwargs):
         stime.append(f"{int(seconds // 3600)}:")
     stime.append(f"{int((seconds // 60) % 60):02}:")
     stime.append(f"{int(seconds % 60):02}")
-    if kwargs.get("fract", 0):
-        fmt = f"%.{kwargs.get('fract', 0)}f"
-        fract = fmt % (seconds % 1)
-        fract = fract[1:]
-        stime.append(fract)
+    if fract:
+        stime.append(f"{seconds % 1:.{fract}f}"[1:])
     return "".join(stime)
 
 
 #
 # default columns width and display functions
 #
-DEFAULT_SPEC = ("%6s", None)
-DEFAULT_SPECS = {
+DEFAULT_SPEC: tuple[str, DisplayFunc | None] = ("%6s", None)
+DEFAULT_SPECS: dict[str, tuple[str, DisplayFunc | None]] = {
     "name": ("%-20s", None),
     "name=full": ("%-80s", None),
     "name=base": ("%-20s", None),
@@ -169,21 +167,31 @@ DEFAULT_SPECS = {
 DEFAULT_SEPARATOR = " | "
 
 
-def prepare_display_columns(columns, widths):
+class DisplayOptions(TypedDict, total=False):
+    """Keyword options of display_results."""
+
+    max_lines: int
+    header: bool
+    indent: int
+    widths: str | list[str] | None
+    separator: str
+    raw_print: bool
+    filesize: bool
+
+
+def prepare_display_columns(columns: Sequence[str], widths: Sequence[str]) -> dict[int, ColumnSpec]:
     """
-    Prepare columns to display : set width and specific display functions
+    Prepare columns to display : set width and specific display functions.
+
     - columns : ([str]) columns names as defined by LRSelectPhotos
     - widths : ([str]) width of each column, comma separated (ex: "15,-50")
     """
-    column_spec = {}
-    for num_col, name in enumerate(columns):
-        name = name.strip()
+    column_spec: dict[int, ColumnSpec] = {}
+    for num_col, raw_name in enumerate(columns):
+        name = raw_name.strip()
         if not name:
             continue
-        if name in DEFAULT_SPECS:
-            width, func = DEFAULT_SPECS[name]
-        else:
-            width, func = DEFAULT_SPEC
+        width, func = DEFAULT_SPECS.get(name, DEFAULT_SPEC)
         # chance to change widths from outside
         if num_col < len(widths):
             width = f"%{widths[num_col].strip()}s"
@@ -191,9 +199,87 @@ def prepare_display_columns(columns, widths):
     return column_spec
 
 
-def display_results(rows, columns, **kwargs):
+def _file_size(fname: str) -> int | None:
+    """Return size of file, None if not readable."""
+    try:
+        return Path(fname).stat().st_size
+    except OSError:
+        return None
+
+
+def _filesize_indexes(columns: Sequence[str]) -> tuple[int, int]:
+    """Return index of full name in rows, and index of the filesize column to insert."""
+    columns_lr = list(columns)
+    columns_lr.remove("filesize")
+    return columns_lr.index("name=full"), list(columns).index("filesize")
+
+
+def _print_header(column_spec: dict[int, ColumnSpec], indent: int, separator: str) -> None:
+    """Print column names and underline."""
+    total_width = 0
+    line = []
+    for name, width, _ in column_spec.values():
+        match = re.search(r"(\d+)s", width)
+        val_width = int(match.group(1)) if match else 8
+        total_width += val_width
+        line.append(width % name[:val_width])
+    print(indent * " ", separator.join(line), sep="")
+    print(
+        indent * " ",
+        (total_width + (len(column_spec) - 1) * len(separator)) * "=",
+        sep="",
+    )
+
+
+def _format_row(
+    row: Sequence[Any], column_spec: dict[int, ColumnSpec], *, raw_print: bool
+) -> list[str]:
+    """Format each visible value of a row."""
+    line = []
+    for num_col, value in enumerate(row):
+        try:
+            _, width, func_format = column_spec[num_col]
+        except KeyError:
+            # invisible column (ex: criteria width/heightCropped)
+            continue
+        display_value = value
+        if not raw_print:
+            if value is None:
+                display_value = ""
+            elif func_format:
+                display_value = func_format(value)
+        line.append(width % display_value)
+    return line
+
+
+def _to_list(value: str | Sequence[str]) -> list[str]:
+    """Split a comma separated string, or copy a list."""
+    if isinstance(value, str):
+        return [a.strip() for a in value.split(",")]
+    return list(value)
+
+
+def _lines_to_display(wanted_lines: int, nrows: int, *, header: bool) -> int:
+    """Return the number of rows to display, print the count header."""
+    if wanted_lines < 0:
+        wanted_lines = sys.maxsize
+    if wanted_lines >= nrows:
+        if header:
+            print(f" * Results ({nrows} entries) :")
+        return nrows
+    if header:
+        print(f" * Results (first {wanted_lines} entries of {nrows}) :")
+    return wanted_lines
+
+
+def display_results(
+    rows: Sequence[Sequence[Any]],
+    columns: str | Sequence[str],
+    **kwargs: Unpack[DisplayOptions],
+) -> None:
     """
-    Display SQL results
+    Display SQL results.
+
     - rows : SQL colummns
     - columns : column names to display ("filesize" column can be specified for compute filesize )
     - kwargs :
@@ -205,31 +291,17 @@ def display_results(rows, columns, **kwargs):
        * raw_print : print raw value (for columns aperture, shutter speed, ido, dates)
        * filesize : compute and add column filesize
     """
+    header = kwargs.get("header", True)
     if not rows:
-        if kwargs.get("header", True):
+        if header:
             print(" * None data result")
         return
 
-    if isinstance(columns, str):
-        columns = [a.strip() for a in columns.split(",")]
-    widths = kwargs.get("widths", [])
-    if widths is None:
-        widths = []
-    if isinstance(widths, str):
-        widths = [a.strip() for a in widths.split(",")]
+    columns = _to_list(columns)
+    widths = _to_list(kwargs.get("widths") or [])
     indent = kwargs.get("indent", 4)
     separator = kwargs.get("separator", DEFAULT_SEPARATOR)
-    wanted_lines = kwargs.get("max_lines", sys.maxsize)
-    if wanted_lines < 0:
-        wanted_lines = sys.maxsize
-    if wanted_lines >= len(rows):
-        max_lines = len(rows)
-        if kwargs.get("header", True):
-            print(f" * Results ({len(rows)} entries) :")
-    else:
-        max_lines = wanted_lines
-        if kwargs.get("header", True):
-            print(f" * Results (first {wanted_lines} entries of {len(rows)}) :")
+    max_lines = _lines_to_display(kwargs.get("max_lines", sys.maxsize), len(rows), header=header)
 
     column_spec = prepare_display_columns(columns, widths)
 
@@ -239,74 +311,25 @@ def display_results(rows, columns, **kwargs):
             continue
         column_spec[i] = (f"column{i}", DEFAULT_SPEC[0], DEFAULT_SPEC[1])
 
-    # display header
-    if kwargs.get("header", True):
-        total_width = 0
-        line = []
-
-        for _, num_col in enumerate(column_spec):
-            name, width, _ = column_spec[num_col]
-            match = re.search(r"(\d+)s", width)
-            if match:
-                val_width = int(match.group(1))
-            else:
-                val_width = 8
-            total_width += val_width
-            name = name[:val_width]
-            line.append(width % name)
-        print(indent * " ", separator.join(line), sep="")
-        print(
-            indent * " ",
-            (total_width + (len(column_spec) - 1) * len(separator)) * "=",
-            sep="",
-        )
+    if header:
+        _print_header(column_spec, indent, separator)
 
     # display datas
+    filesize = kwargs.get("filesize", False)
     total_filesize = 0
-    if kwargs.get("filesize", False):
-        # compute columns index
-        columns_lr = list(columns)
-        columns_lr.remove("filesize")
-        id_fname = columns_lr.index("name=full")
-        id_filesize = columns.index("filesize")
-    for num in range(0, max_lines):
-        if num == len(rows):
-            break
-        line = []
-        row = rows[num]
-        if kwargs.get("filesize", False):
-            fname = row[id_fname]
-            try:
-                size = os.path.getsize(fname)
-                total_filesize += size
-            except OSError:
-                size = 0
-            row = list(row)
-            row.insert(id_filesize, size)
-        for num_col, value in enumerate(row):
-            try:
-                _, width, func_format = column_spec[num_col]
-            except KeyError:
-                # invisible column (ex: criteria width/heightCropped)
-                continue
-            if not kwargs.get("raw_print", False):
-                if value is None:
-                    value = ""
-                elif func_format:
-                    value = func_format(value)
-            line.append(width % value)
+    id_fname, id_filesize = _filesize_indexes(columns) if filesize else (0, 0)
+    for row in rows[:max_lines]:
+        values: Sequence[Any] = row
+        if filesize:
+            size = _file_size(row[id_fname]) or 0
+            total_filesize += size
+            with_size = [*row]
+            with_size.insert(id_filesize, size)
+            values = with_size
+        line = _format_row(values, column_spec, raw_print=kwargs.get("raw_print", False))
         print(indent * " ", separator.join(line), sep="")
 
     # datas displayed, but maybe still filesize to compute
-    if kwargs.get("filesize", False):
-        for num in range(max_lines, len(rows)):
-            row = rows[num]
-            fname = row[id_fname]
-            try:
-                size = os.path.getsize(fname)
-                total_filesize += size
-            except OSError:
-                pass
-        print(
-            f' * Total filesize : {smart_unit(total_filesize, "B")} ({total_filesize} bytes)'
-        )
+    if filesize:
+        total_filesize += sum(_file_size(row[id_fname]) or 0 for row in rows[max_lines:])
+        print(f" * Total filesize : {smart_unit(total_filesize, 'B')} ({total_filesize} bytes)")

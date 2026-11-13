@@ -1,27 +1,32 @@
-#!/usr/bin/env python
-# # -*- coding: utf-8 -*-
-# pylint: disable=bad-continuation,line-too-long, C0326
+"""LRSelectCollection class for building SQL select for table AgLibraryCollection."""
 
-"""
-LRSelectPhoto class for building SQL select for table Adobe_images
-"""
+from typing import TYPE_CHECKING, Unpack, overload, override
 
+from .lrselectgeneric import (
+    CursorOptions,
+    LRSelectGeneric,
+    PrintOptions,
+    SelectOptions,
+    SqlOptions,
+)
 
-from .lrselectgeneric import LRSelectGeneric
+if TYPE_CHECKING:
+    import sqlite3
+
+    from .lrcat import LRCatDB
+    from .lrtoolconfig import LRToolConfig
 
 
 class LRSelectCollection(LRSelectGeneric):
-    """
-    Build select request for collection table AgLibraryCollection
-    """
+    """Build select request for collection table AgLibraryCollection."""
 
     MAIN_TABLE = "AgLibraryCollection col"
 
-    def __init__(self, config, lrdb):
-        """ """
+    def __init__(self, config: LRToolConfig, lrdb: LRCatDB) -> None:
+        """Describe the columns and criteria of the collection table."""
         super().__init__(
             config,
-            lrdb,  #
+            lrdb,
             # Table source
             #
             "AgLibraryCollection col",
@@ -29,62 +34,78 @@ class LRSelectCollection(LRSelectGeneric):
             # Column description
             #
             {
-                "all": {"True": ["*", None]},
-                "name": {"True": ["col.name AS name", None]},
-                "id": {"True": ["col.id_local AS id", None]},
-                "type": {"True": ["col.creationId AS type", None]},
-                "parent": {"True": ["col.parent AS parent", None]},
+                "all": {"True": ("*", None)},
+                "name": {"True": ("col.name AS name", None)},
+                "id": {"True": ("col.id_local AS id", None)},
+                "type": {"True": ("col.creationId AS type", None)},
+                "parent": {"True": ("col.parent AS parent", None)},
                 "smart": {
-                    "True": [
+                    "True": (
                         "cont.content AS content",
-                        [
-                            "JOIN AgLibraryCollectionContent cont ON col.id_local = cont.collection"
-                        ],
-                    ]
+                        ["JOIN AgLibraryCollectionContent cont ON col.id_local = cont.collection"],
+                    )
                 },
             },
             #
             # Criteria description
             #
             {
-                "name": [
+                "name": (
                     "",
                     'col.name LIKE "%s"',
-                ],
-                "id": [
+                ),
+                "id": (
                     "",
                     "col.id_local = %s",
-                ],
-                "type": [
+                ),
+                "type": (
                     "",
                     "%s",
                     self.func_type,
-                ],
-                "id4smart": [
+                ),
+                "id4smart": (
                     "JOIN AgLibraryCollectionContent cont ON col.id_local = cont.collection",
                     'col.id_local=%s AND cont.owningModule = "ag.library.smart_collection"',
-                ],
-                "name4smart": [
+                ),
+                "name4smart": (
                     "JOIN AgLibraryCollectionContent cont ON col.id_local = cont.collection",
                     'col.name LIKE "%s" AND cont.owningModule = "ag.library.smart_collection"',
-                ],
+                ),
             },
         )
 
-    def func_type(self, value):
-        """convert value for "type" criteria (creationId)"""
+    def func_type(self, value: str) -> str:
+        """Convert value for "type" criteria (creationId)."""
         if value == "standard":
             return 'creationId="com.adobe.ag.library.collection"'
         if value == "smart":
             return 'creationId="com.adobe.ag.library.smart_collection"'
         if value == "all":
             return 'creationId="com.adobe.ag.library.smart_collection" OR creationId="com.adobe.ag.library.collection"'
-        else:
-            return f'creationId="{value}"'
+        return f'creationId="{value}"'
 
-    def select_generic(self, columns, criters, **kwargs):
-        """
-        Build SQL request for collecion table (AgLibraryCollection) from key/value pair
+    @overload
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[PrintOptions]
+    ) -> None: ...
+    @overload
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[SqlOptions]
+    ) -> str: ...
+    @overload
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[CursorOptions]
+    ) -> sqlite3.Cursor: ...
+    @overload
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[SelectOptions]
+    ) -> sqlite3.Cursor | str | None: ...
+    @override
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[SelectOptions]
+    ) -> sqlite3.Cursor | str | None:
+        """Build SQL request for collection table (AgLibraryCollection) from key/value pair.
+
         columns :
             - 'name'      : collection name
             - 'id'        : id collection
@@ -101,7 +122,6 @@ class LRSelectCollection(LRSelectGeneric):
             - print : print sql and return None
             - sql : return SQL string only
         """
-
         if not columns:
             columns = "name"
         return super().select_generic(columns, criters, **kwargs)

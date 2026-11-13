@@ -1,20 +1,17 @@
-#!/usr/bin/env python
-# # # -*- coding: utf-8 -*-
-# pylint: disable=line-too-long
-"""
-    Lexical parser for criteria
-"""
+"""Lexical parser for criteria."""
 
 import re
+from typing import ClassVar
+
+# a token: (kind, (key, value)) for KEYVAL, (kind, None) for operators and parentheses
+type Token = tuple[str, tuple[str, str] | None]
 
 
 class CriterLexer:
-    """
-    Lexical parser for criteria
-    """
+    """Lexical parser for criteria."""
 
     # List of tokens accepted after specific token
-    RULES_FOLLOW = {
+    RULES_FOLLOW: ClassVar[dict[str | None, list[str]]] = {
         None: ["LPAR", "KEYVAL"],
         "KEYVAL": ["OR", "AND", "RPAR"],
         "OR": ["KEYVAL", "LPAR"],
@@ -23,16 +20,22 @@ class CriterLexer:
         "RPAR": ["OR", "AND", "RPAR"],
     }
 
-    def __init__(self, criters):
-        """ """
+    # operator token kinds and their regex, tried in this order
+    OPERATORS: ClassVar[list[tuple[str, str]]] = [
+        ("LPAR", r"(\() *"),
+        ("RPAR", r"(\)) *"),
+        ("AND", r", *"),
+        ("OR", r"\| *"),
+    ]
+
+    def __init__(self, criters: str) -> None:
+        """Prepare the parsing of the criteria string."""
         self.criters = criters
-        self.tokens = list()
+        self.tokens: list[Token] = []
         self.last_error = ""
 
-    def _parse_keyval(self):
-        """
-        Parse KEY [= VALUE]
-        """
+    def _parse_keyval(self) -> bool:
+        """Parse KEY [= VALUE]."""
         #
         # get criter
         #
@@ -49,9 +52,7 @@ class CriterLexer:
         if _m:
             self.criters = self.criters[_m.end() :]
             # regex from https://www.metaltoad.com/blog/regex-quoted-string-escapable-quotes
-            _m = re.match(
-                r' *((?<![\\])[\'"])((?:.(?!(?<![\\])\1))*.?)\1', self.criters
-            )
+            _m = re.match(r' *((?<![\\])[\'"])((?:.(?!(?<![\\])\1))*.?)\1', self.criters)
             if _m:
                 # regex return quote type ("') and string
                 value = _m.group(2)
@@ -63,9 +64,8 @@ class CriterLexer:
                 else:
                     self.last_error = f'No value for criterion "{key}"'
                     return False
-            if _m:
-                self.criters = self.criters[_m.end() :]
-                self.tokens.append(("KEYVAL", (key, value)))
+            self.criters = self.criters[_m.end() :]
+            self.tokens.append(("KEYVAL", (key, value)))
 
         else:
             # no value for criter
@@ -73,17 +73,14 @@ class CriterLexer:
             self.tokens.append(("KEYVAL", (key, value)))
         return True
 
-    def parse(self, criters=None):
-        """
-        Parse criters string
-        """
+    def parse(self, criters: str | None = None) -> bool:
+        """Parse criters string."""
         if criters:
             self.criters = criters
         if not self.criters:
             return False
 
         while len(self.criters) > 0:
-
             self.criters = self.criters.strip()
             if len(self.criters) == 0:
                 break
@@ -97,68 +94,43 @@ class CriterLexer:
                 return False
 
             #
-            # operator left parenthesis : '('
+            # operators : '(', ')', AND ',' and OR '|'
             #
-            _m = re.match(r"(\() *", self.criters)
-            if _m:
-                self.tokens.append(("LPAR", None))
-                self.criters = self.criters[_m.end() :]
-                continue
-
-            #
-            # operator right parenthesis : ')'
-            #
-            _m = re.match(r"(\)) *", self.criters)
-            if _m:
-                self.tokens.append(("RPAR", None))
-                self.criters = self.criters[_m.end() :]
-                continue
-
-            #
-            # operator AND : ','
-            #
-            _m = re.match(r", *", self.criters)
-            if _m:
-                self.tokens.append(("AND", None))
-                self.criters = self.criters[_m.end() :]
-                continue
-
-            #
-            # operator OR : '|'
-            #
-            _m = re.match(r"\| *", self.criters)
-            if _m:
-                self.tokens.append(("OR", None))
-                self.criters = self.criters[_m.end() :]
+            if self._parse_operator():
                 continue
 
             #
             # Finally : token error
             #
-            self.last_error = (
-                f'Invalid token \042{self.criters.split(" ")[0]}\042'
-            )
+            self.last_error = f"Invalid token \042{self.criters.split(' ')[0]}\042"
 
             return False
 
         return self.check_syntax()
 
-    def check_syntax(self):
-        """
-        Check criters syntax (only following token)
-        """
-        prev_token = None
+    def _parse_operator(self) -> bool:
+        """Parse a parenthesis or an AND/OR operator."""
+        for kind, regex in self.OPERATORS:
+            _m = re.match(regex, self.criters)
+            if _m:
+                self.tokens.append((kind, None))
+                self.criters = self.criters[_m.end() :]
+                return True
+        return False
+
+    def check_syntax(self) -> bool:
+        """Check criters syntax (only following token)."""
+        prev_kind: str | None = None
         par_level = 0
-        for token, _ in self.tokens:
-            allowed_tokens = self.RULES_FOLLOW[prev_token]
-            if token not in allowed_tokens:
-                self.last_error = f'"{token}" not allowed after "{prev_token}"'
+        for kind, _ in self.tokens:
+            if kind not in self.RULES_FOLLOW[prev_kind]:
+                self.last_error = f'"{kind}" not allowed after "{prev_kind}"'
                 return False
-            if token == "LPAR":
+            if kind == "LPAR":
                 par_level += 1
-            elif token == "RPAR":
+            elif kind == "RPAR":
                 par_level -= 1
-            prev_token = token
+            prev_kind = kind
         if par_level != 0:
             self.last_error = "unbalanced parenthesis"
             return False

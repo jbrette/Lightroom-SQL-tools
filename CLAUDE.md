@@ -12,6 +12,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync                              # creates .venv (Python >=3.14, see .python-version) from uv.lock
 uv run pytest                        # full test suite (~2s)
 uv run pytest tests/test_select_photo.py -k "keyword"   # subset
+uv run ruff check . && uv run ruff format --check .      # lint (select = ALL) + format
+uv run mypy                          # strict typing of lrtools, scripts and tests
+uv run pre-commit install            # run ruff + mypy on every commit
 uv add <pkg>                         # add a dependency (updates pyproject.toml and uv.lock)
 uv build                             # sdist + wheel (hatchling; version read from lrtools/_version.py)
 
@@ -38,9 +41,9 @@ uv run lrsmart.py -b <catalog> --file exported.lrsmcol --results
 
 - `lrtools/lrcat.py` — `LRCatDB` opens the catalog and exposes `cursor`, plus hand-written queries (duplicates, imports, collections hierarchy, XMP/EXIF extraction, count-by-date). It instantiates `self.lrphoto = LRSelectPhoto(...)`. Re-exports the date helpers of `lrtools/lrdates.py` (`date_to_lrstamp`, `lr_strptime`); Lightroom stores modification dates as seconds since 2001-01-01 UTC. `lrselectgeneric` imports `lrdates`, never `lrcat`: `lrcat` imports `lrselectphoto`, so the reverse would be circular.
 - `lrtools/lrselectgeneric.py` — `LRSelectGeneric` is the table-driven SQL builder. Subclasses pass a main table plus two dicts:
-  - **columns**: `name -> {value -> [SQL select expr, [JOIN clauses] | None]}`. The value is the part after `=` in the columns string (`name=full`); a bare column name means value `"True"`.
-  - **criteria**: `name -> [JOIN clause(s), WHERE template with %s, optional value-conversion func]`. Conversion funcs (`func_oper_value`, `func_oper_parsedate`, `func_like_value_or_null`, …) turn user input like `>=2016-5-15` into SQL fragments.
-  
+  - **columns**: `name -> {value -> (SQL select expr, [JOIN clauses] | None)}` (`ColumnTable`). The value is the part after `=` in the columns string (`name=full`); a bare column name means value `"True"`.
+  - **criteria**: `name -> (JOIN clause(s), WHERE template with %s, optional value-conversion func)` (`CriteriaTable`). Conversion funcs (`func_oper_value`, `func_oper_parsedate`, `func_like_value_or_null`, …) turn user input like `>=2016-5-15` into SQL fragments.
+
   `select_generic()` first tries `select_predefined()` (special pseudo-columns like `count_by_date(...)`, `duplicated_names(...)`), then tokenizes criteria with `CriterLexer` (`,` = AND, `|` = OR, parentheses), accumulates deduplicated JOINs, and executes. Criteria on tables with several rows per photo (keywords, collections, imports) must be `i.id_local IN (subquery)` with no JOIN, otherwise a photo is returned once per matching combination; `<NUM>` in a JOIN/WHERE template is still replaced by the occurrence count of a repeated criterion. Pseudo-criteria `sort`, `distinct`, `groupby`, `count` map to ORDER BY / SELECT DISTINCT / GROUP BY / HAVING.
 - `lrtools/lrselectphoto.py` — `LRSelectPhoto` (main table `Adobe_images i`) defines nearly all photo columns and criteria. **Adding a column or criterion means adding a dict entry here**, plus documenting it in the `select_generic` docstring.
 - `lrtools/lrselectcollection.py` — same pattern for `AgLibraryCollection` (`lrselect.py -t collection`).
@@ -51,6 +54,7 @@ uv run lrsmart.py -b <catalog> --file exported.lrsmcol --results
 ## Conventions
 
 - `lrselect.py -h` builds its help text by slicing the `select_generic` docstrings of `LRSelectPhoto` and `LRSelectCollection` between `columns :` and `kwargs :`. Keep those markers intact when editing the docstrings; they are the user-facing reference for columns and criteria.
+- Lint and typing are as strict as the tools allow: ruff `select = ["ALL"]` minus three rules listed with their reason in `pyproject.toml`, and `mypy --strict` plus extra error codes. Every function is annotated; `lrtools` ships `py.typed`. A `# noqa` or `# type: ignore` needs the exact code and a reason. Never run `ruff --unsafe-fixes` here: its T201 fix deletes the scripts' `print` calls.
 - Errors surface as `LRCatException`, `LRSelectException`, `SmartException`, `LRConfigException`; scripts catch these and exit with a message.
 - Version string lives in `lrtools/_version.py` (date-based, `YYYY.MM.DD`), read by hatchling via `[tool.hatch.version]`.
 - `lrselect.py` and `lrsmart.py` are shipped as top-level modules in the wheel (`only-include` in `pyproject.toml`) and exposed as the `lrselect` / `lrsmart` console scripts via their `run()` functions, which wrap `main()` with the error handling. Keep both runnable directly as `.py` files too.

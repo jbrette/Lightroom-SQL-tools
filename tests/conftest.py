@@ -1,6 +1,6 @@
-"""
-Shared fixtures: a small synthetic Lightroom catalog built from the real schema
-(tests/data/schema.sql, Lightroom Classic 13) and filled with known photos.
+"""Shared fixtures: a small synthetic Lightroom catalog filled with known photos.
+
+The catalog is built from the real schema (tests/data/schema.sql, Lightroom Classic 13).
 
 Photos (Adobe_images.id_local):
     1  /photos/2018/IMG_0001.JPG  2018-05-10  rating 5, flagged, Red, Canon, F8 1/1000, Paris GPS,
@@ -16,11 +16,15 @@ Photos (Adobe_images.id_local):
 
 import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
 import pytest
 
 from lrtools.lrcat import LRCatDB
 from lrtools.lrtoolconfig import LRToolConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -61,6 +65,7 @@ SMART_CANON_FAMILY = """s = {
 }
 """
 
+# Only module constants are interpolated, never external input.
 FIXTURE_SQL = f"""
 INSERT INTO Adobe_variablesTable (id_local, id_global, name, value)
     VALUES (1, 'var-1', 'Adobe_DBVersion', '1303001');
@@ -175,11 +180,19 @@ INSERT INTO AgLibraryImportImage (id_local, image, import) VALUES (1, 1, 1), (2,
 INSERT INTO AgMetadataSearchIndex (id_local, image, exifSearchIndex, otherSearchIndex) VALUES
     (1, 1, '/tcanon/teos/t5d/t', '/tsunset/t'),
     (2, 3, '/tnikon/td750/t', '');
-"""
+"""  # noqa: S608
 
 
-def build_catalog(path):
-    """create a synthetic catalog file at path"""
+class SelectIds(Protocol):
+    """Signature of the select_ids fixture."""
+
+    def __call__(self, criteria: str, columns: str = "id") -> list[int]:
+        """Return the sorted distinct photo ids selected by criteria."""
+        ...
+
+
+def build_catalog(path: Path) -> Path:
+    """Create a synthetic catalog file at path."""
     conn = sqlite3.connect(path)
     conn.executescript((DATA_DIR / "schema.sql").read_text())
     # executescript doesn't support parameters: run inserts one by one
@@ -193,32 +206,32 @@ def build_catalog(path):
 
 
 @pytest.fixture(scope="session")
-def catalog_path(tmp_path_factory):
-    """path of the synthetic catalog"""
+def catalog_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Path of the synthetic catalog."""
     return build_catalog(tmp_path_factory.mktemp("catalog") / "test.lrcat")
 
 
 @pytest.fixture
-def config():
-    """default config, independent of any lrtools.ini"""
+def config() -> LRToolConfig:
+    """Return the default config, independent of any lrtools.ini."""
     cfg = LRToolConfig(None)
     cfg.dayfirst = True
     return cfg
 
 
 @pytest.fixture
-def lrdb(config, catalog_path):
-    """catalog opened read-only, as scripts do"""
+def lrdb(config: LRToolConfig, catalog_path: Path) -> Iterator[LRCatDB]:
+    """Catalog opened read-only, as scripts do."""
     db = LRCatDB(config, str(catalog_path))
     yield db
     db.conn.close()
 
 
 @pytest.fixture
-def select_ids(lrdb):
-    """run a photo select on criteria and return sorted distinct photo ids"""
+def select_ids(lrdb: LRCatDB) -> SelectIds:
+    """Run a photo select on criteria and return sorted distinct photo ids."""
 
-    def _select(criteria, columns="id"):
+    def _select(criteria: str, columns: str = "id") -> list[int]:
         rows = lrdb.lrphoto.select_generic(columns, criteria).fetchall()
         return sorted({row[0] for row in rows})
 
