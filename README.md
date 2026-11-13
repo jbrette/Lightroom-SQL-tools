@@ -8,7 +8,7 @@ Python library and scripts to retrieve and displays photo data from an Adobe Lig
 
 
 ## Tested environment
-* OS: Windows 10 (64 bit)
+* OS: Windows 10 (64 bit), macOS
 * Lightroom: 6.x, Classic CC
 * Python >= 3.14
 * Terminals: Windows console or cygwin
@@ -17,19 +17,24 @@ Python library and scripts to retrieve and displays photo data from an Adobe Lig
 ## Installation
 Requires [uv](https://docs.astral.sh/uv/).
 
-* install the ``lrselect`` and ``lrsmart`` commands: ``uv tool install git+https://github.com/jbrette/Lightroom-SQL-tools``
+Current release: **v26.11.13** (versions are date-based, ``YY.MM.DD``; each release is a git tag ``vYY.MM.DD``).
+
+* install the ``lrselect`` and ``lrsmart`` commands: ``uv tool install git+https://github.com/jbrette/Lightroom-SQL-tools@v26.11.13``
 
 <br>OR, from a clone of the project:<br>
 
 * run ``uv sync`` in the main directory
 * run ``uv run lrselect ...`` and ``uv run lrsmart ...`` (or ``uv run lrselect.py ...``)
 
-To use the library in another project: ``uv add git+https://github.com/jbrette/Lightroom-SQL-tools``
+To use the library in another project: ``uv add "lrtools @ git+https://github.com/jbrette/Lightroom-SQL-tools@v26.11.13"``
+
+The library is fully type-annotated (ships ``py.typed``, checked with ``mypy --strict``) and its behaviour is specified in [openspec/specs/](openspec/specs/).
 
 ## Configuration
 Modify the config file *lrtools.ini*. It is searched in the current directory, then in the script directory, then in *~/.config/lrtools/*. Without a config file, defaults are used.
 * LRCatalog : the default Lightroom catalog to use
 * DayFirst :  parsing date format ("DD-MM-YY" if True, else  "YY-MM-DD")
+* GeoCoder : geocoding service for the ``gps=<town>+<km>`` criterion (``Nominatim`` or ``BanFrance``, needs network access)
 
 ## Using lrtools library
 
