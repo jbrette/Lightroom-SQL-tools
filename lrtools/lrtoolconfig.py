@@ -1,78 +1,62 @@
-# -*- coding: utf-8 -*-
-# pylint: disable=invalid-name
-
-"""
-
-Configuration for LRTool
-
-"""
+"""Configuration for LRTool."""
 
 import sys
-import os
 from configparser import ConfigParser
+from pathlib import Path
 
 # sections
 CONFIG_MAIN = "Main"
 
 
-class LRConfigException(Exception):
-    """lrtools config exception"""
+class LRConfigException(Exception):  # noqa: N818 public API name
+    """Lrtools config exception."""
 
 
 class LRToolConfig:
-    """
-    Singleton class for LRTools config
-    """
+    """Singleton class for LRTools config."""
 
-    def __init__(self, config_filename="lrtools.ini"):
-        """load default config
+    def __init__(self, config_filename: str | None = "lrtools.ini") -> None:
+        """Load default config.
 
-            If config_filename has a full path, it will be used.
-            If it only has a filename, it will be searched for in the current
-            directory, the directory the script is stored, then ~/.config/lrtools.
-            If it is None, defaults will be used.
+        If config_filename has a full path, it will be used.
+        If it only has a filename, it will be searched for in the current
+        directory, the directory the script is stored, then ~/.config/lrtools.
+        If it is None, defaults will be used.
         """
-        self.default_lrcat = (
-            "C:\\Users\\Default\\Documents\\My Lightroom Catalog.lrcat"
-        )
+        self.default_lrcat = "C:\\Users\\Default\\Documents\\My Lightroom Catalog.lrcat"
         self.dayfirst = True
         self.geocoder = "nominatim"
 
         # no config file found: silently use defaults
-        if config_filename and os.path.isfile(self.find(config_filename)):
+        if config_filename and Path(self.find(config_filename)).is_file():
             try:
                 self.load(config_filename)
             except LRConfigException:
-                print(
-                    "WARNING: failed to read config file",
-                    config_filename,
-                    file=sys.stderr,
-                )
+                sys.stderr.write(f"WARNING: failed to read config file {config_filename}\n")
 
     @staticmethod
-    def find(filename):
+    def find(filename: str) -> str:
+        """Return config file path.
+
+        The path is filename itself if it has a directory part, else the first existing
+        in current directory, script directory, then user config directory.
         """
-        return config file path : filename itself if it has a directory part, else
-        first existing in current directory, script directory, then user config directory
-        """
-        _dir, _ = os.path.split(filename)
-        if _dir:
+        if Path(filename).name != filename:
             return filename
         candidates = [
-            os.path.join(os.getcwd(), filename),
-            os.path.join(os.path.dirname(sys.argv[0]), filename),
-            os.path.join(os.path.expanduser("~"), ".config", "lrtools", filename),
+            Path.cwd() / filename,
+            Path(sys.argv[0]).parent / filename,
+            Path.home() / ".config" / "lrtools" / filename,
         ]
-        return next((_f for _f in candidates if os.path.isfile(_f)), candidates[0])
+        return str(next((_f for _f in candidates if _f.is_file()), candidates[0]))
 
-    def load(self, filename):
-        """load a config file"""
-
+    def load(self, filename: str) -> None:
+        """Load a config file."""
         # parser and default value
         parser = ConfigParser(
             {
                 "LRCatalog": self.default_lrcat,
-                "DayFirst": self.dayfirst,
+                "DayFirst": str(self.dayfirst),
                 "GeoCoder": self.geocoder,
             }
         )
@@ -84,6 +68,5 @@ class LRToolConfig:
             self.geocoder = parser.get(CONFIG_MAIN, "GeoCoder")
 
         except Exception as _e:
-            raise LRConfigException(
-                f'Failed to read config file "{filename}"'
-            ) from _e
+            msg = f'Failed to read config file "{filename}"'
+            raise LRConfigException(msg) from _e

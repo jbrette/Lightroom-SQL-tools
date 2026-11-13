@@ -1,23 +1,74 @@
-#!/usr/bin/env python
-# # # -*- coding: utf-8 -*-
-# pylint: disable=line-too-long, bad-continuation
-"""
+"""Base class for building simple SQL select from a table."""
 
-Base class for building simple SQL select from a table
-
-"""
-
-import re
 import logging
+import re
+from collections.abc import Callable
 from datetime import datetime
+from typing import TYPE_CHECKING, Literal, Required, TypedDict, Unpack, overload
+
 from dateutil import parser
 
-from .lrdates import date_to_lrstamp
 from .criterlexer import CriterLexer
+from .lrdates import date_to_lrstamp
+
+if TYPE_CHECKING:
+    import sqlite3
+
+    from .lrcat import LRCatDB
+    from .lrtoolconfig import LRToolConfig
+
+log = logging.getLogger(__name__)
+
+# JOIN clause(s) of a column or criterion: one string, a list, or nothing
+type Joins = str | list[str] | None
+# column value -> (SQL select expression, JOIN clauses); expression is None for a "var:" column
+type ColumnSpec = tuple[str | None, Joins]
+# column name -> {column value -> ColumnSpec}
+type ColumnTable = dict[str, dict[str, ColumnSpec]]
+# value returned by a criterion converter, substituted in the WHERE template with %
+type SqlValue = str | tuple[str | float, ...]
+# converts the user value of a criterion into SqlValue
+type Converter = Callable[[str], SqlValue]
+# criterion -> (JOIN clauses, WHERE template[, converter])
+type CriterionSpec = tuple[Joins, str] | tuple[Joins, str, Converter]
+# criterion name -> CriterionSpec
+type CriteriaTable = dict[str, CriterionSpec]
 
 
-class LRSelectException(Exception):
-    """LRSelect Exception"""
+class LRSelectException(Exception):  # noqa: N818 public API name
+    """LRSelect Exception."""
+
+
+class _BaseOptions(TypedDict, total=False):
+    distinct: bool  # request SELECT DISTINCT
+    debug: bool  # print sql
+
+
+class SqlOptions(_BaseOptions, total=False):
+    """Options of select_generic returning the SQL string."""
+
+    sql: Required[Literal[True]]
+
+
+class PrintOptions(_BaseOptions, total=False):
+    """Options of select_generic printing the SQL and returning None."""
+
+    print: Required[Literal[True]]
+    sql: bool
+
+
+class CursorOptions(_BaseOptions, total=False):
+    """Options of select_generic executing the SQL and returning the cursor."""
+
+    print: Literal[False]
+    sql: Literal[False]
+
+
+class SelectOptions(_BaseOptions, total=False):
+    """All options of select_generic."""
+
+    print: bool  # print sql and return None
+    sql: bool  # return SQL string only
 
 
 # sqlite date modifiers accordigf parts of date string
@@ -28,32 +79,31 @@ STARTS_OF_DATE = {
 }
 
 
-def parsedate(config, date):
-    """return datetime from string"""
+def parsedate(config: LRToolConfig, date: str | datetime) -> datetime:
+    """Return datetime from string."""
     if isinstance(date, str):
         return parser.parse(
             date,
-            default=datetime(1900, 1, 1, 0, 0, 0),
+            # capture times are naive local times
+            default=datetime(1900, 1, 1, 0, 0, 0),  # noqa: DTZ001
             dayfirst=config.dayfirst,
         )
-    if isinstance(date, datetime):
-        return date
-    return None
+    return date
 
 
-def to_bool(value):
-    """convert value to bool (true, false, 1, 0)"""
-    if isinstance(value, str):
-        if value.lower() == "true" or value == "1" or value == "yes":
-            return True
-        if value.lower() == "false" or value == "0" or value == "no":
-            return False
-    raise LRSelectException("Invalid bool value")
+def to_bool(value: str) -> bool:
+    """Convert value to bool (true, false, 1, 0)."""
+    if value.lower() == "true" or value in {"1", "yes"}:
+        return True
+    if value.lower() == "false" or value in {"0", "no"}:
+        return False
+    msg = "Invalid bool value"
+    raise LRSelectException(msg)
 
 
 class LRSelectGeneric:
-    """
-    Build select SQL requests for a specific table from columns and criteria strings
+    """Build select SQL requests for a specific table from columns and criteria strings.
+
     This a base class not intended to be used directly.
 
     Exemple:
@@ -66,80 +116,88 @@ class LRSelectGeneric:
     # specific key for column specification
     _VAR_FIELD = "var:"
 
-    def __init__(self, config, lrdb, main_table, columns, criteria):
-        """
+    def __init__(
+        self,
+        config: LRToolConfig,
+        lrdb: LRCatDB,
+        main_table: str,
+        columns: ColumnTable,
+        criteria: CriteriaTable,
+    ) -> None:
+        """Store the table descriptions.
+
         * param lrdb : LRCatDB instance
         * param main_table: string,
         * param columns: dictionnary for convert to SQL.
           structure :
             column_name (the key) :  {
-                value1 : [ SQL_COLUMNS,  [SQL_FROM_TABLE_LIST] ],
-                value2 : [ SQL_COLUMNS,  [SQL_FROM_TABLE_LIST] ],
+                value1 : ( SQL_COLUMNS,  [SQL_FROM_TABLE_LIST] ),
+                value2 : ( SQL_COLUMNS,  [SQL_FROM_TABLE_LIST] ),
                 ...
                 }
             example :
                 'name' : {
                     'full':
-                        [   'rf.absolutePath || fo.pathFromRoot || fi.baseName || "." || fi.extension AS name',
+                        (   'rf.absolutePath || fo.pathFromRoot || fi.baseName || "." || fi.extension AS name',
                             [
                                 ' JOIN AgLibraryRootFolder rf ON fo.rootFolder = rf.id_local',
                                 'JOIN AgLibraryFolder fo ON fi.folder = fo.id_local', 'JOIN AgLibraryFile fi ON i.rootFile = fi.id_local'
                             ],
-                        ],
-                    True:  [ 'fi.baseName || "." || fi.extension AS name', [ 'JOIN AgLibraryFile fi ON i.rootFile = fi.id_local' ] ],
+                        ),
+                    'True':  ( 'fi.baseName || "." || fi.extension AS name', [ 'JOIN AgLibraryFile fi ON i.rootFile = fi.id_local' ] ),
                 }
 
         * params criteria :  dictionnary where :
           structure :
-            criter_name : [ SQL_JOIN_TABLES, SQL_WHERES, parser_value_function ]
+            criter_name : ( SQL_JOIN_TABLES, SQL_WHERES, parser_value_function )
             ...
             example :
-            'collection' : [
+            'collection' : (
                 'JOIN AgLibraryCollection col ON col.id_local = ci.Collection JOIN  AgLibraryCollectionimage ci ON ci.image = i.id_local',
-                'col.name = "%s"' ]                   ]
+                'col.name = "%s"' )
         """
         self.config = config
         self.lrdb = lrdb
         self.from_table = f"FROM {main_table}"
-        self.froms = None
+        self.froms: list[str] = []
         self.column_description = columns
         self.criteria_description = criteria
         self.groupby = ""
-        self.having_criters = []
-        self.sql_column_names = []
-        self.raw_column_names = []
+        self.having_criters: list[str] = []
+        self.sql_column_names: list[str] = []
+        self.raw_column_names: list[str] = []
 
-    def selected_column_names(self):
-        """column names from SQL statement executed"""
+    def selected_column_names(self) -> list[str]:
+        """Column names from SQL statement executed."""
         return self.raw_column_names
 
     #
     # Some general functions called for convert value key in value sql
     #
 
-    def func_oper_parsedate(self, value):
-        """parse opration and date value"""
-        oper = False
+    def func_oper_parsedate(self, value: str) -> str:
+        """Parse operation and date value."""
+        oper = ""
         for index, char in enumerate(value):
             if char.isnumeric():
                 oper = value[:index]
                 value = value[index:]
                 break
         if not oper:
-            raise LRSelectException("None operator for date")
+            msg = "None operator for date"
+            raise LRSelectException(msg)
         date = parsedate(self.config, value)
-        if not date:
-            raise LRSelectException("Incorrect date")
         # value is it year, month/year or day/month/year ?
         nparts = len(re.findall(r"\d+", value))
-        if nparts <= 3:
+        if nparts in STARTS_OF_DATE:
             sql = f'DATE(i.captureTime, "{STARTS_OF_DATE[nparts]}") {oper} DATE("{date}", "{STARTS_OF_DATE[nparts]}")'
         else:
             sql = f'i.captureTime {oper} "{date.strftime("""%Y-%m-%dT%H:%M:%S""")}"'
         return sql
 
-    def func_oper_dateloc_to_lrstamp(self, value):
-        """value is a lightrom timestamp"""
+    def func_oper_dateloc_to_lrstamp(self, value: str) -> tuple[str, float]:
+        """Value is a lightroom timestamp."""
+        oper = ""
         for index, char in enumerate(value):
             if char.isnumeric():
                 oper = value[:index]
@@ -147,176 +205,154 @@ class LRSelectGeneric:
                 break
         dtmod = date_to_lrstamp(self.config, value)
         if dtmod is None:
-            raise LRSelectException('invalid date value on "datemod"')
+            msg = 'invalid date value on "datemod"'
+            raise LRSelectException(msg)
         return oper, dtmod
 
-    def func_oper_dateutc_to_lrstamp(self, value):
-        """value is a lightrom timestamp"""
-        oper = None
+    def func_oper_dateutc_to_lrstamp(self, value: str) -> tuple[str, float]:
+        """Value is a lightroom timestamp."""
+        oper = ""
         for index, char in enumerate(value):
             if char.isnumeric():
                 oper = value[:index]
                 value = value[index:]
                 break
-        dtmod = date_to_lrstamp(self.config, value, False)
+        dtmod = date_to_lrstamp(self.config, value, localtz=False)
         if not dtmod:
-            raise LRSelectException('invalid date value on "datemod"')
+            msg = 'invalid date value on "datemod"'
+            raise LRSelectException(msg)
         return oper, dtmod
 
-    def func_oper_value(self, value):
-        """optional operand and numeric value"""
+    def func_oper_value(self, value: str) -> tuple[str, str]:
+        """Split the optional operator (default "=") from the value."""
         oper = None
         for index, char in enumerate(value):
             if char.isalnum():
-                oper = value[:index] if value[:index] else "="
+                oper = value[:index] or "="
                 value = value[index:]
                 break
         if oper is None:
-            raise LRSelectException("operator without value")
+            msg = "operator without value"
+            raise LRSelectException(msg)
         return oper, value
 
-    def func_bool_to_equal(self, value):
-        """value is boolean"""
+    def func_bool_to_equal(self, value: str) -> str:
+        """Value is boolean."""
         return "=" if to_bool(value) else "!="
 
-    def func_0_1(self, value):
-        """value is a null condition"""
+    def func_0_1(self, value: str) -> str:
+        """Value is a null condition."""
         value = value.lower()
-        if value in ["0", "false"]:
-            value = "0"
-        elif value in ["1", "true"]:
-            value = "1"
-        else:
-            raise LRSelectException("invalid hasgps criterion value")
-        return value
+        if value in {"0", "false"}:
+            return "0"
+        if value in {"1", "true"}:
+            return "1"
+        msg = "invalid hasgps criterion value"
+        raise LRSelectException(msg)
 
-    def func_value_or_null(self, value):
-        """value is a null condition"""
+    def func_value_or_null(self, value: str) -> str:
+        """Value is a null condition."""
         value = value.lower()
-        if value in ["null", "false"]:
-            value = "IS NULL"
-        elif value in ["!null", "true"]:
-            value = "NOT NULL"
-        else:
-            value = f'= "{value}"'
-        return value
+        if value in {"null", "false"}:
+            return "IS NULL"
+        if value in {"!null", "true"}:
+            return "NOT NULL"
+        return f'= "{value}"'
 
-    def func_like_value_or_null(self, value):
-        """value is a null condition"""
+    def func_like_value_or_null(self, value: str) -> str:
+        """Value is a null condition."""
         value = value.lower()
-        if value in ["null", "false"]:
-            value = "IS NULL"
-        elif value in ["!null", "true"]:
-            value = "NOT NULL"
-        else:
-            value = f'LIKE "{value}"'
-        return value
+        if value in {"null", "false"}:
+            return "IS NULL"
+        if value in {"!null", "true"}:
+            return "NOT NULL"
+        return f'LIKE "{value}"'
 
-    def func_value_or_not_equal(self, value):
-        """value is parameter or comparaison"""
+    def func_value_or_not_equal(self, value: str) -> tuple[str, str]:
+        """Value is parameter or comparaison."""
         try:
-            value = to_bool(value)
-            if value:
-                return ("<>", '""')
-            return ("==", '""')
+            is_true = to_bool(value)
         except LRSelectException:
             return ("=", f'"{value}"')
+        if is_true:
+            return ("<>", '""')
+        return ("==", '""')
 
-    def _keyval_to_keys(self, strlist):
-        """
-        convert string of key=value in list of dict
-        """
-        pairs = list()
+    def _keyval_to_keys(self, strlist: str) -> list[dict[str, str]]:
+        """Convert string of key=value in list of dict."""
+        pairs: list[dict[str, str]] = []
         if not strlist:
             return pairs
-        for keyval in strlist.split(","):
-            try:
-                if not keyval:
-                    continue  # skip double commas
-                keyval = keyval.strip()
-                if keyval.startswith("count(") or keyval.startswith("countby("):
-                    pairs.append({keyval: "True"})
-                    continue
-                _kv = keyval.split("=", 1)
-                if len(_kv) == 2:
-                    _k, _v = _kv
-                else:
-                    if len(_kv) == 1:
-                        # support key without value => value if True
-                        _k = keyval
-                        _v = "True"
-                    else:
-                        raise LRSelectException(f"No value after = on {keyval}")
-                pairs.append({_k: _v})
-            except Exception as _e:
-                raise LRSelectException(
-                    f"Invalid key/value syntax ({keyval} in {strlist})"
-                ) from _e
+        for raw_keyval in strlist.split(","):
+            if not raw_keyval:
+                continue  # skip double commas
+            keyval = raw_keyval.strip()
+            if keyval.startswith(("count(", "countby(")):
+                pairs.append({keyval: "True"})
+                continue
+            # support key without value => value is True
+            _k, _, _v = keyval.partition("=")
+            pairs.append({_k: _v if "=" in keyval else "True"})
         return pairs
 
-    def _add_from(self, sql, froms):
-        """add from to final FROM statement (internal function)"""
+    def _add_from(self, sql: str | list[str], froms: list[str]) -> None:
+        """Add from to final FROM statement (internal function)."""
         if isinstance(sql, str):
             sql = [sql]
-        for sqlfrom in sql:
-            sqlfrom = sqlfrom.strip()
+        for raw_sqlfrom in sql:
+            sqlfrom = raw_sqlfrom.strip()
             if sqlfrom in froms:
                 continue
             froms.append(sqlfrom)
 
-    def remove_quotes(self, value):
-        """Remove quotes from string"""
+    def remove_quotes(self, value: str) -> str:
+        """Remove quotes from string."""
         if not value:
             return ""
-        if (value[0] == '"' and value[-1] == '"') or (
-            value[0] == "'" and value[-1] == "'"
-        ):
+        if (value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'"):
             value = value[1:-1]
         return value
 
-    def columns_to_sql(self, columns, sqlcols, sqlfroms):
-        """
-        Convert string of column names comman separated to sql string
-        """
+    def _column_to_sql(
+        self, column: dict[str, str], sqlcols: list[str], sqlfroms: list[str], case: str = ""
+    ) -> None:
+        """Add the SQL of one column to sqlcols and its JOINs to sqlfroms."""
+        key, value = next(iter(column.items()))
+        if key not in self.column_description:
+            msg = f'invalid column key "{key}"'
+            raise LRSelectException(msg)
+        dvalues = self.column_description[key]
+        col_sql: str | None
+        if self._VAR_FIELD in dvalues and value.startswith(self._VAR_FIELD):
+            # _VAR_FIELD introduces process for columns name specification
+            _, from_sql = dvalues[self._VAR_FIELD]
+            col_sql = self.remove_quotes(value[len(self._VAR_FIELD) :])
+        else:
+            if value not in dvalues:
+                msg = f'Invalid value "{value}" on column "{key}"'
+                raise LRSelectException(msg)
+            col_sql, from_sql = dvalues[value]
+        if col_sql is None:
+            msg = f'invalid column key "{key}"'
+            raise LRSelectException(msg)
+        if case in {"count", "countby"}:
+            parts = col_sql.split(" ")
+            if len(parts) < 2 or parts[-2].upper() != "AS":  # noqa: PLR2004 "<expr> AS <name>"
+                msg = "Error in count definition"
+                raise LRSelectException(msg)
+            sqlcols.append(f"count({''.join(parts[:-2])}) AS count_{parts[-1]}")
+            if case == "countby":
+                self.groupby = f"GROUP BY {parts[-1]}"
+        else:
+            sqlcols.append(col_sql)
+        if from_sql:
+            self._add_from(from_sql, sqlfroms)
 
-        def _column_to_sql(column, case=""):
-            """process on column"""
-            key, value = list(column.items())[0]
-            try:
-                dvalues = self.column_description[key]
-                if self._VAR_FIELD in dvalues and value.startswith(
-                    self._VAR_FIELD
-                ):
-                    # _VAR_FIELD introduces process for columns name specification
-                    _, from_sql = dvalues[self._VAR_FIELD]
-                    col_sql = self.remove_quotes(value[len(self._VAR_FIELD) :])
-                else:
-                    if value not in dvalues.keys():
-                        raise LRSelectException(
-                            f'Invalid value "{value}" on column "{key}"'
-                        )
-                    col_sql, from_sql = dvalues[value]
-                if case in ["count", "countby"]:
-                    parts = col_sql.split(" ")
-                    if parts[-2].upper() == "AS":
-                        sqlcols.append(
-                            f"count({''.join(parts[:-2])}) AS count_{parts[-1]}"
-                        )
-                        if case == "countby":
-                            self.groupby = f"GROUP BY {parts[-1]}"
-                    else:
-                        raise LRSelectException("Error in count definition")
-                else:
-                    sqlcols.append(col_sql)
-                if from_sql:
-                    self._add_from(from_sql, sqlfroms)
-            except KeyError as _e:
-                raise LRSelectException(f'invalid column key "{key}"') from _e
-
-        # ENTRY columns_to_sql(self, ...)
+    def columns_to_sql(self, columns: str, sqlcols: list[str], sqlfroms: list[str]) -> None:
+        """Convert string of column names comma separated to sql string."""
         self.raw_column_names = []
         for keyval in self._keyval_to_keys(columns):
-            key, value = list(keyval.items())[0]
+            key, value = next(iter(keyval.items()))
             if key == "name":
                 self.raw_column_names.append(f"{key}={value}")
             else:
@@ -324,24 +360,42 @@ class LRSelectGeneric:
             match = re.match(r"(count|countby)\(([\w=]+)\)", key)
             if match:
                 if match.group(1) == "count":
-                    _column_to_sql({match.group(2): value}, "count")
+                    self._column_to_sql({match.group(2): value}, sqlcols, sqlfroms, "count")
                     continue
                 # countby :
                 lkv = self._keyval_to_keys(match.group(2))
-                _column_to_sql(lkv[0], "countby")
+                self._column_to_sql(lkv[0], sqlcols, sqlfroms, "countby")
                 continue
-            _column_to_sql(keyval)
+            self._column_to_sql(keyval, sqlcols, sqlfroms)
 
-    def select_predefined(self, _columns, _criters):
-        """
-        To be redefined in derived class
-        Must return SQL statement if columns or criters is a keyword (a function) supported, else empty string
+    def select_predefined(self, _columns: str, _criters: str) -> str | None:
+        """Return SQL statement if columns or criters is a supported keyword (a function).
+
+        To be redefined in derived class; returns None when nothing is predefined.
         """
         return None
 
-    def select_generic(self, columns, criters, **kwargs):
-        """
-        Build SQL request from key/value pairs
+    @overload
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[PrintOptions]
+    ) -> None: ...
+    @overload
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[SqlOptions]
+    ) -> str: ...
+    @overload
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[CursorOptions]
+    ) -> sqlite3.Cursor: ...
+    @overload
+    def select_generic(
+        self, columns: str, criters: str = "", **kwargs: Unpack[SelectOptions]
+    ) -> sqlite3.Cursor | str | None: ...
+    def select_generic(  # noqa: C901, PLR0912, PLR0915 single pass over the criteria tokens
+        self, columns: str, criters: str = "", **kwargs: Unpack[SelectOptions]
+    ) -> sqlite3.Cursor | str | None:
+        """Build SQL request from key/value pairs.
+
         columns :
             - 'NAME1'='VALUE1'
             - ...
@@ -355,9 +409,9 @@ class LRSelectGeneric:
             - sql : return SQL string only
         """
 
-        def _finalize(sql):
+        def _finalize(sql: str) -> sqlite3.Cursor | str | None:
             if kwargs.get("debug") or kwargs.get("print"):
-                print("SQL =", sql)
+                print("SQL =", sql)  # noqa: T201 the "debug"/"print" options print the SQL
             if kwargs.get("print"):
                 return None
             if kwargs.get("sql"):
@@ -368,17 +422,15 @@ class LRSelectGeneric:
             self.sql_column_names = [d[0] for d in self.lrdb.cursor.description]
             return self.lrdb.cursor
 
-        # logging
-        log = logging.getLogger(__name__)
         log.info('select_generic("%s" "%s")', columns, criters)
 
         # init
-        fields = []
+        fields: list[str] = []
         self.froms = [self.from_table]
-        wheres = []
+        wheres: list[str] = []
         sort = ""
-        nb_wheres = {}
-        select_type = None
+        nb_wheres: dict[str, int] = {}
+        select_type: str | None = None
         self.groupby = ""
         self.having_criters = []
         self.sql_column_names = []
@@ -387,7 +439,6 @@ class LRSelectGeneric:
         #
         # process predefined sql functions
         #
-        # pylint: disable=assignment-from-none
         sql = self.select_predefined(columns, criters)
         if sql:
             return _finalize(sql)
@@ -398,48 +449,50 @@ class LRSelectGeneric:
 
         lex = CriterLexer(criters)
         if criters and not lex.parse():
-            raise LRSelectException(f"Criteria syntax error : {lex.last_error}")
+            msg = f"Criteria syntax error : {lex.last_error}"
+            raise LRSelectException(msg)
         token2sql = {"LPAR": "(", "RPAR": ")", "AND": "AND", "OR": "OR"}
 
         # process tokens
-        prev_optoken = None
+        prev_optoken: str | None = None
         has_where = False
-        for token, data in lex.tokens:
-            if token in token2sql:
+        for kind, data in lex.tokens:
+            if kind in token2sql:
                 # add previous token if any
                 if prev_optoken:
                     wheres.append(token2sql[prev_optoken])
-                prev_optoken = token
+                prev_optoken = kind
                 continue
 
-            if token != "KEYVAL":
-                raise LRSelectException(f'Invalid Token : "{token}"')
-            key, value = data
-            value = self.remove_quotes(value)
+            if kind != "KEYVAL" or data is None:
+                msg = f'Invalid Token : "{kind}"'
+                raise LRSelectException(msg)
+            key, raw_value = data
+            stripped = self.remove_quotes(raw_value)
+            value: SqlValue = stripped
             if key not in nb_wheres:
                 nb_wheres[key] = 1
             else:
                 nb_wheres[key] += 1
             if key not in self.criteria_description:
-                raise LRSelectException(f'No existent criterion "{key}"')
+                msg = f'No existent criterion "{key}"'
+                raise LRSelectException(msg)
             criter_desc = self.criteria_description[key]
-            if len(criter_desc) == 2:
-                _from, _where = criter_desc
-            else:
-                _from, _where, func = criter_desc
+            _from, _where = criter_desc[0], criter_desc[1]
+            if len(criter_desc) == 3:  # noqa: PLR2004 (joins, where, converter)
                 try:
-                    value = func(value)
+                    value = criter_desc[2](stripped)
                 except TypeError as _e:
-                    raise LRSelectException(
-                        f'Syntax error on criterion "{key}"'
-                    ) from _e
+                    msg = f'Syntax error on criterion "{key}"'
+                    raise LRSelectException(msg) from _e
             # some specific keywords for SQL
             if key == "sort":  # specific key for sql 'ORDER BY'
                 way = "DESC"
-                if value[0] == "-":
+                sort_col = str(value)
+                if sort_col[0] == "-":
                     way = "ASC"
-                    value = value[1:]
-                sort = f"ORDER BY {value} {way}"
+                    sort_col = sort_col[1:]
+                sort = f"ORDER BY {sort_col} {way}"
                 prev_optoken = None
                 continue
             if key == "distinct":  # specific key for sql 'SELECT DISTINCT'
@@ -454,10 +507,9 @@ class LRSelectGeneric:
             if _from:
                 if isinstance(_from, str):
                     _from = [_from]
-                _from = [
-                    _f.replace("<NUM>", f"{nb_wheres[key]}") for _f in _from
-                ]
-                self._add_from(_from, self.froms)
+                self._add_from(
+                    [_f.replace("<NUM>", f"{nb_wheres[key]}") for _f in _from], self.froms
+                )
             _where = _where.replace("<NUM>", f"{nb_wheres[key]}")
             if "%s" in _where:
                 _where = _where % value
@@ -483,26 +535,20 @@ class LRSelectGeneric:
         #
         # finalize request
         #
-        if fields:
-            fields = ", ".join(fields)
-        else:
-            fields = 'rf.absolutePath || fo.pathFromRoot || fi.baseName || "." || fi.extension '
-        self.froms = " ".join(self.froms)
-        if wheres:
-            wheres = f'WHERE {" ".join(wheres)}'
-        else:
-            wheres = ""
+        sql_fields = (
+            ", ".join(fields)
+            if fields
+            else 'rf.absolutePath || fo.pathFromRoot || fi.baseName || "." || fi.extension '
+        )
+        sql_froms = " ".join(self.froms)
+        sql_wheres = f"WHERE {' '.join(wheres)}" if wheres else ""
 
         if kwargs.get("distinct"):
             select_type = "SELECT DISTINCT"
         elif not select_type:
             select_type = "SELECT"
 
-        having = (
-            f"HAVING {' AND '.join(self.having_criters)}"
-            if self.having_criters
-            else ""
-        )
+        having = f"HAVING {' AND '.join(self.having_criters)}" if self.having_criters else ""
 
-        sql = f"{select_type}  {fields} {self.froms} {wheres} {self.groupby} {having} {sort}"
+        sql = f"{select_type}  {sql_fields} {sql_froms} {sql_wheres} {self.groupby} {having} {sort}"
         return _finalize(sql)
